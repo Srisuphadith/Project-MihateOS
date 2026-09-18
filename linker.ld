@@ -2,15 +2,8 @@ ENTRY(_start)
 
 SECTIONS
 {
-    /*
-     * Kernel physical/virtual load address
-     */
     . = 1M;
 
-    /*
-     * Multiboot2 header MUST be near the beginning
-     * of the kernel image.
-     */
     .multiboot ALIGN(8) :
     {
         KEEP(*(.multiboot))
@@ -34,7 +27,7 @@ SECTIONS
         *(.data.*)
     }
 
-    .bss ALIGN(16) :
+    .bss ALIGN(4096) :
     {
         *(COMMON)
         *(.bss)

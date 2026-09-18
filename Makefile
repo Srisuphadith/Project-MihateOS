@@ -5,6 +5,7 @@ GRUB_FILE = i686-elf-grub-file
 GRUB_MKRESCUE = i686-elf-grub-mkrescue
 
 CFLAGS = \
+	-m32 \
 	-ffreestanding \
 	-fno-stack-protector \
 	-fno-pie \
@@ -13,13 +14,14 @@ CFLAGS = \
 	-fno-unwind-tables
 
 LDFLAGS = \
+	-m elf_i386 \
 	-T linker.ld \
 	-o kernel
 
 all: myos.iso
 
 boot.o: boot.S
-	$(CC) -c boot.S -o boot.o
+	$(CC) -m32 -c boot.S -o boot.o
 
 kernel.o: kernel.c
 	$(CC) $(CFLAGS) -c kernel.c -o kernel.o
@@ -46,7 +48,8 @@ run: myos.iso
 		-m 512M \
 		-boot order=d \
 		-cdrom myos.iso \
-		-display cocoa
+		-display cocoa \
+		-no-reboot
 
 clean:
 	rm -rf *.o kernel myos.iso iso
