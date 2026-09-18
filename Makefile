@@ -18,30 +18,43 @@ LDFLAGS = \
 	-T linker.ld \
 	-o kernel
 
+
 all: myos.iso
+
 
 boot.o: boot.S
 	$(CC) -m32 -c boot.S -o boot.o
 
-kernel.o: kernel.c
+
+kernel.o: kernel.c graphics.h
 	$(CC) $(CFLAGS) -c kernel.c -o kernel.o
 
-kernel: boot.o kernel.o linker.ld
-	$(LD) $(LDFLAGS) boot.o kernel.o
+
+graphics.o: graphics.c graphics.h
+	$(CC) $(CFLAGS) -c graphics.c -o graphics.o
+
+
+kernel: boot.o kernel.o graphics.o linker.ld
+	$(LD) $(LDFLAGS) boot.o kernel.o graphics.o
+
 
 check: kernel
 	$(GRUB_FILE) --is-x86-multiboot2 kernel
+
 
 iso/boot/kernel: kernel
 	mkdir -p iso/boot/grub
 	cp kernel iso/boot/kernel
 
+
 iso/boot/grub/grub.cfg: grub.cfg
 	mkdir -p iso/boot/grub
 	cp grub.cfg iso/boot/grub/grub.cfg
 
+
 myos.iso: iso/boot/kernel iso/boot/grub/grub.cfg
 	$(GRUB_MKRESCUE) -o myos.iso iso
+
 
 run: myos.iso
 	qemu-system-x86_64 \
@@ -50,6 +63,7 @@ run: myos.iso
 		-cdrom myos.iso \
 		-display cocoa \
 		-no-reboot
+
 
 clean:
 	rm -rf *.o kernel myos.iso iso
