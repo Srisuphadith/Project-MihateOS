@@ -3,7 +3,7 @@ leaning how to develop OS, Moreover make new OS name MihateOS
 
 ---
 
-architecter x86
+architechture x86 cossover on Mackbook pro M1 13"
 
 install 
 ```
