@@ -101,5 +101,17 @@ void graphics_draw_line(
     Color color
 );
 
+void graphics_draw_char(
+    uint32_t x,
+    uint32_t y,
+    char c,
+    Color color
+);
+void graphics_draw_string(
+    uint32_t x,
+    uint32_t y,
+    char *c,
+    Color color
+);
 
 #endif

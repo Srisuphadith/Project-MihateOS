@@ -1,4 +1,5 @@
 #include "graphics.h"
+#include "font8x8.h"
 #include <stdint.h>
 
 
@@ -1199,5 +1200,47 @@ void graphics_draw_line(
             error += dx;
             y0 += sy;
         }
+    }
+}
+
+
+void graphics_draw_char(
+    uint32_t x,
+    uint32_t y,
+    char c,
+    Color color
+)
+{
+    const uint8_t *glyph = font8x8[(uint8_t)c];
+
+    for (uint32_t row = 0; row < 8; row++)
+    {
+        for (uint32_t col = 0; col < 8; col++)
+        {
+            if (glyph[row] & (1 << (7 - col)))
+            {
+                graphics_put_pixel(
+                    x + col,
+                    y + row,
+                    color
+                );
+            }
+        }
+    }
+}
+
+void graphics_draw_string(
+    uint32_t x,
+    uint32_t y,
+    char *c,
+    Color color
+){
+    int cnt = 0;
+    int offset = x;
+    while (c[cnt] != '\0')
+    {
+        graphics_draw_char(offset,y,c[cnt],color);
+        cnt++;
+        offset += 8;
     }
 }
