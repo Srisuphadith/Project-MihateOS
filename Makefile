@@ -35,9 +35,45 @@ kernel.o: kernel.c graphics.h
 graphics.o: graphics.c graphics.h
 	$(CC) $(CFLAGS) -c graphics.c -o graphics.o
 
+gdt.o: gdt.c gdt.h
+	$(CC) $(CFLAGS) -c gdt.c -o gdt.o
 
-kernel: boot.o kernel.o graphics.o linker.ld
-	$(LD) $(LDFLAGS) boot.o kernel.o graphics.o
+gdt_flush.o: gdt_flush.S
+	$(CC) -m32 -c gdt_flush.S -o gdt_flush.o
+
+idt.o: idt.c idt.h
+	$(CC) $(CFLAGS) -c idt.c -o idt.o
+
+pic.o: pic.c pic.h io.h
+	$(CC) $(CFLAGS) -c pic.c -o pic.o
+
+keyboard.o: keyboard.c keyboard.h io.h
+	$(CC) $(CFLAGS) -c keyboard.c -o keyboard.o
+
+interrupt.o: interrupt.S
+	$(CC) -m32 -c interrupt.S -o interrupt.o
+
+kernel: boot.o \
+        gdt.o \
+        gdt_flush.o \
+        idt.o \
+        pic.o \
+        keyboard.o \
+        interrupt.o \
+        kernel.o \
+        graphics.o \
+        linker.ld
+
+	$(LD) $(LDFLAGS) \
+        boot.o \
+        gdt.o \
+        gdt_flush.o \
+        idt.o \
+        pic.o \
+        keyboard.o \
+        interrupt.o \
+        kernel.o \
+        graphics.o
 
 
 check: kernel
