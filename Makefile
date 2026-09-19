@@ -65,7 +65,7 @@ run: myos.iso
     	-drive if=pflash,format=raw,readonly=on,file=./edk2-stable202605-r1-bin/x64/code.fd \
     	-drive if=pflash,format=raw,file=./edk2-stable202605-r1-bin/x64/vars.fd \
     	-cdrom myos.iso \
-    	-display cocoa \
+    	-display cocoa,zoom-to-fit=on \
 		-debugcon stdio \
     	-global isa-debugcon.iobase=0xe9 \
     	-no-reboot
