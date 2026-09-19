@@ -3,6 +3,7 @@ Leaning how to develop OS, Moreover make new OS name MihateOS
 
 ---
 <img src="./MihatePic.jpg">
+
 ---
 
 Architechture x86 cossover on Mackbook pro M1 13"
