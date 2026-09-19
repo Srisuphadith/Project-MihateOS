@@ -1,8 +1,10 @@
 CC = x86_64-elf-gcc
 LD = x86_64-elf-ld
 
-GRUB_FILE = i686-elf-grub-file
-GRUB_MKRESCUE = i686-elf-grub-mkrescue
+#GRUB_FILE = i686-elf-grub-file
+#GRUB_MKRESCUE = i686-elf-grub-mkrescue
+GRUB_FILE = x86_64-elf-grub-file
+GRUB_MKRESCUE = x86_64-elf-grub-mkrescue
 
 CFLAGS = \
 	-m32 \
@@ -58,11 +60,15 @@ myos.iso: iso/boot/kernel iso/boot/grub/grub.cfg
 
 run: myos.iso
 	qemu-system-x86_64 \
-		-m 512M \
-		-boot order=d \
-		-cdrom myos.iso \
-		-display cocoa \
-		-no-reboot
+    	-machine q35 \
+    	-m 512M \
+    	-drive if=pflash,format=raw,readonly=on,file=./edk2-stable202605-r1-bin/x64/code.fd \
+    	-drive if=pflash,format=raw,file=./edk2-stable202605-r1-bin/x64/vars.fd \
+    	-cdrom myos.iso \
+    	-display cocoa \
+		-debugcon stdio \
+    	-global isa-debugcon.iobase=0xe9 \
+    	-no-reboot
 
 
 clean:

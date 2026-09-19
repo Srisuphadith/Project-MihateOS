@@ -15,9 +15,10 @@ header_start:
     .short 0
     .long 20
 
-    .long 1920
-    .long 1080
-    .long 32
+    # No specific framebuffer preference
+    .long 0
+    .long 0
+    .long 0
 
     # Padding
     .long 0
@@ -40,16 +41,13 @@ _start:
 
     cli
 
-    # GRUB:
     # EAX = Multiboot2 magic
     # EBX = Multiboot2 information address
 
     movl %ebx, multiboot_info_ptr
 
-    # Setup stack
     movl $stack_top, %esp
 
-    # Call C kernel
     pushl %ebx
     call kernel_main
 
@@ -65,7 +63,6 @@ halt:
 
 multiboot_info_ptr:
     .long 0
-
 
 .align 16
 

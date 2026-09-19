@@ -1,20 +1,42 @@
 #include "graphics.h"
+#include <stdint.h>
 
 
 /*
- * Multiboot2 tag types
+ * ---------------------------------------------------------
+ * Multiboot2 definitions
+ * ---------------------------------------------------------
  */
+
 #define MULTIBOOT_TAG_TYPE_END         0
 #define MULTIBOOT_TAG_TYPE_FRAMEBUFFER 8
 
-#define MULTIBOOT_FRAMEBUFFER_TYPE_RGB 1
+#define MULTIBOOT_FRAMEBUFFER_TYPE_INDEXED 0
+#define MULTIBOOT_FRAMEBUFFER_TYPE_RGB     1
+#define MULTIBOOT_FRAMEBUFFER_TYPE_EGA_TEXT 2
 
 
 /*
- * Multiboot2 framebuffer tag
+ * ---------------------------------------------------------
+ * Multiboot2 framebuffer structures
+ * ---------------------------------------------------------
  *
- * This is the common part of the framebuffer tag.
+ * The framebuffer tag starts with this common structure.
+ *
+ * Multiboot2:
+ *
+ * offset  0 : type
+ * offset  4 : size
+ * offset  8 : framebuffer address
+ * offset 16 : pitch
+ * offset 20 : width
+ * offset 24 : height
+ * offset 28 : bpp
+ * offset 29 : framebuffer type
+ * offset 30 : reserved
+ *
  */
+
 typedef struct
 {
     uint32_t type;
@@ -35,8 +57,11 @@ typedef struct
 
 
 /*
- * RGB framebuffer information
+ * RGB framebuffer tag.
+ *
+ * The RGB information starts at offset 32.
  */
+
 typedef struct
 {
     framebuffer_common_t common;
@@ -54,8 +79,11 @@ typedef struct
 
 
 /*
+ * ---------------------------------------------------------
  * Graphics state
+ * ---------------------------------------------------------
  */
+
 static volatile uint8_t *framebuffer = 0;
 
 static uint32_t framebuffer_width  = 0;
@@ -63,33 +91,386 @@ static uint32_t framebuffer_height = 0;
 static uint32_t framebuffer_pitch  = 0;
 
 static uint8_t framebuffer_bpp = 0;
+static uint8_t framebuffer_bytes_per_pixel = 0;
+
+
+/*
+ * RGB channel layout
+ */
 
 static uint8_t red_position   = 0;
+static uint8_t red_mask_size  = 0;
+
 static uint8_t green_position = 0;
+static uint8_t green_mask_size = 0;
+
 static uint8_t blue_position  = 0;
+static uint8_t blue_mask_size = 0;
 
 
+/*
+ * ---------------------------------------------------------
+ * Helper: create channel mask
+ * ---------------------------------------------------------
+ */
+
+static uint32_t channel_mask(uint8_t bits)
+{
+    if (bits == 0)
+    {
+        return 0;
+    }
+
+    if (bits >= 32)
+    {
+        return 0xFFFFFFFFu;
+    }
+
+    return (1u << bits) - 1u;
+}
+
+
+/*
+ * ---------------------------------------------------------
+ * Helper: convert 8-bit color to framebuffer channel size
+ * ---------------------------------------------------------
+ *
+ * Example:
+ *
+ * 8-bit color -> 8-bit channel
+ *
+ * 255 -> 255
+ *
+ *
+ * 8-bit color -> 5-bit channel
+ *
+ * 255 -> 31
+ *
+ */
+
+static uint32_t scale_color(
+    uint8_t color,
+    uint8_t mask_size
+)
+{
+    if (mask_size == 0)
+    {
+        return 0;
+    }
+
+    if (mask_size >= 8)
+    {
+        return color;
+    }
+
+    uint32_t max_value =
+        channel_mask(mask_size);
+
+    return
+        ((uint32_t)color * max_value + 127) / 255;
+}
+
+
+
+static void debug_char(char c)
+{
+    __asm__ volatile (
+        "outb %0, $0xE9"
+        :
+        : "a"((uint8_t)c)
+    );
+}
+
+
+static void debug_string(const char *s)
+{
+    while (*s)
+    {
+        debug_char(*s++);
+    }
+}
+
+
+static void debug_hex(uint32_t value)
+{
+    const char hex[] = "0123456789ABCDEF";
+
+    debug_string("0x");
+
+    for (int i = 7; i >= 0; i--)
+    {
+        debug_char(
+            hex[(value >> (i * 4)) & 0xF]
+        );
+    }
+
+    debug_char('\n');
+}
 /*
  * ---------------------------------------------------------
  * graphics_init()
  * ---------------------------------------------------------
  */
 
+// int graphics_init(uint32_t mbi_addr)
+// {
+//     /*
+//      * Reset state
+//      */
+
+//     framebuffer = 0;
+
+//     framebuffer_width = 0;
+//     framebuffer_height = 0;
+//     framebuffer_pitch = 0;
+
+//     framebuffer_bpp = 0;
+//     framebuffer_bytes_per_pixel = 0;
+
+//     red_position = 0;
+//     red_mask_size = 0;
+
+//     green_position = 0;
+//     green_mask_size = 0;
+
+//     blue_position = 0;
+//     blue_mask_size = 0;
+
+
+//     /*
+//      * Multiboot2 information:
+//      *
+//      * +0 : total size
+//      * +4 : reserved
+//      * +8 : first tag
+//      */
+
+//     uint8_t *mbi =
+//         (uint8_t *)(uintptr_t)mbi_addr;
+
+//     uint8_t *tag_addr =
+//         mbi + 8;
+
+
+//     while (1)
+//     {
+//         uint32_t type =
+//             *(uint32_t *)(tag_addr + 0);
+
+//         uint32_t size =
+//             *(uint32_t *)(tag_addr + 4);
+
+
+//         /*
+//          * End tag
+//          */
+
+//         if (type == MULTIBOOT_TAG_TYPE_END)
+//         {
+//             break;
+//         }
+
+
+//         /*
+//          * Framebuffer tag
+//          */
+
+//         if (type == MULTIBOOT_TAG_TYPE_FRAMEBUFFER)
+//         {
+//             framebuffer_rgb_t *fb =
+//                 (framebuffer_rgb_t *)tag_addr;
+
+
+//             /*
+//              * We currently support
+//              * RGB framebuffer only.
+//              */
+
+//             if (fb->common.framebuffer_type !=
+//                 MULTIBOOT_FRAMEBUFFER_TYPE_RGB)
+//             {
+//                 return -2;
+//             }
+
+
+//             /*
+//              * Validate bits per pixel.
+//              *
+//              * We need at least one byte per pixel.
+//              */
+
+//             if (fb->common.framebuffer_bpp == 0)
+//             {
+//                 return -3;
+//             }
+
+
+//             /*
+//              * Calculate bytes per pixel.
+//              *
+//              * Examples:
+//              *
+//              * 32 bpp -> 4 bytes
+//              * 24 bpp -> 3 bytes
+//              * 16 bpp -> 2 bytes
+//              *  8 bpp -> 1 byte
+//              */
+
+//             framebuffer_bytes_per_pixel =
+//                 (fb->common.framebuffer_bpp + 7) / 8;
+
+
+//             /*
+//              * Save framebuffer information.
+//              */
+
+//             framebuffer =
+//                 (volatile uint8_t *)
+//                 (uintptr_t)
+//                 fb->common.framebuffer_addr;
+
+//             framebuffer_width =
+//                 fb->common.framebuffer_width;
+
+//             framebuffer_height =
+//                 fb->common.framebuffer_height;
+
+//             framebuffer_pitch =
+//                 fb->common.framebuffer_pitch;
+
+//             framebuffer_bpp =
+//                 fb->common.framebuffer_bpp;
+
+
+//             /*
+//              * Save RGB layout.
+//              */
+
+//             red_position =
+//                 fb->red_position;
+
+//             red_mask_size =
+//                 fb->red_mask_size;
+
+//             green_position =
+//                 fb->green_position;
+
+//             green_mask_size =
+//                 fb->green_mask_size;
+
+//             blue_position =
+//                 fb->blue_position;
+
+//             blue_mask_size =
+//                 fb->blue_mask_size;
+
+
+//             /*
+//              * Basic validation.
+//              */
+
+//             if (framebuffer == 0)
+//             {
+//                 return -4;
+//             }
+
+//             if (framebuffer_width == 0 ||
+//                 framebuffer_height == 0)
+//             {
+//                 return -5;
+//             }
+
+//             if (framebuffer_pitch == 0)
+//             {
+//                 return -6;
+//             }
+
+//             if (framebuffer_bytes_per_pixel == 0)
+//             {
+//                 return -7;
+//             }
+
+
+//             /*
+//              * Make sure the pitch can contain
+//              * at least one complete row.
+//              */
+
+//             uint64_t minimum_pitch =
+//                 (uint64_t)framebuffer_width *
+//                 framebuffer_bytes_per_pixel;
+
+//             if ((uint64_t)framebuffer_pitch <
+//                 minimum_pitch)
+//             {
+//                 return -8;
+//             }
+
+
+//             return 0;
+//         }
+
+
+//         /*
+//          * Multiboot2 tags are aligned to 8 bytes.
+//          */
+
+//         if (size < 8)
+//         {
+//             return -9;
+//         }
+
+//         size =
+//             (size + 7) & ~7u;
+
+//         tag_addr += size;
+//     }
+
+
+//     /*
+//      * No framebuffer tag found.
+//      */
+
+//     return -1;
+// }
 int graphics_init(uint32_t mbi_addr)
 {
-    uint8_t *mbi =
-        (uint8_t *)(uintptr_t)mbi_addr;
+    /*
+     * Reset state
+     */
+
+    framebuffer = 0;
+
+    framebuffer_width = 0;
+    framebuffer_height = 0;
+    framebuffer_pitch = 0;
+
+    framebuffer_bpp = 0;
+    framebuffer_bytes_per_pixel = 0;
+
+    red_position = 0;
+    red_mask_size = 0;
+
+    green_position = 0;
+    green_mask_size = 0;
+
+    blue_position = 0;
+    blue_mask_size = 0;
 
 
     /*
-     * Multiboot2 information structure:
+     * Multiboot2 information:
      *
-     * offset 0 = total size
-     * offset 4 = reserved
-     * offset 8 = first tag
+     * +0 : total size
+     * +4 : reserved
+     * +8 : first tag
      */
 
-    uint8_t *tag_addr = mbi + 8;
+    uint8_t *mbi =
+        (uint8_t *)(uintptr_t)mbi_addr;
+
+    uint8_t *tag_addr =
+        mbi + 8;
 
 
     while (1)
@@ -104,6 +485,7 @@ int graphics_init(uint32_t mbi_addr)
         /*
          * End tag
          */
+
         if (type == MULTIBOOT_TAG_TYPE_END)
         {
             break;
@@ -113,6 +495,7 @@ int graphics_init(uint32_t mbi_addr)
         /*
          * Framebuffer tag
          */
+
         if (type == MULTIBOOT_TAG_TYPE_FRAMEBUFFER)
         {
             framebuffer_rgb_t *fb =
@@ -120,8 +503,10 @@ int graphics_init(uint32_t mbi_addr)
 
 
             /*
-             * We only support RGB framebuffer
+             * We currently support
+             * RGB framebuffer only.
              */
+
             if (fb->common.framebuffer_type !=
                 MULTIBOOT_FRAMEBUFFER_TYPE_RGB)
             {
@@ -130,11 +515,40 @@ int graphics_init(uint32_t mbi_addr)
 
 
             /*
-             * Save framebuffer information
+             * Validate bits per pixel.
+             *
+             * We need at least one byte per pixel.
              */
+
+            if (fb->common.framebuffer_bpp == 0)
+            {
+                return -3;
+            }
+
+
+            /*
+             * Calculate bytes per pixel.
+             *
+             * Examples:
+             *
+             * 32 bpp -> 4 bytes
+             * 24 bpp -> 3 bytes
+             * 16 bpp -> 2 bytes
+             *  8 bpp -> 1 byte
+             */
+
+            framebuffer_bytes_per_pixel =
+                (fb->common.framebuffer_bpp + 7) / 8;
+
+
+            /*
+             * Save framebuffer information.
+             */
+
             framebuffer =
                 (volatile uint8_t *)
-                (uintptr_t)fb->common.framebuffer_addr;
+                (uintptr_t)
+                fb->common.framebuffer_addr;
 
             framebuffer_width =
                 fb->common.framebuffer_width;
@@ -149,38 +563,144 @@ int graphics_init(uint32_t mbi_addr)
                 fb->common.framebuffer_bpp;
 
 
+            /*
+             * Save RGB layout.
+             */
+
             red_position =
                 fb->red_position;
+
+            red_mask_size =
+                fb->red_mask_size;
 
             green_position =
                 fb->green_position;
 
+            green_mask_size =
+                fb->green_mask_size;
+
             blue_position =
                 fb->blue_position;
 
+            blue_mask_size =
+                fb->blue_mask_size;
+
 
             /*
-             * Currently our renderer assumes
-             * 32-bit framebuffer.
+             * DEBUG framebuffer information
              */
-            if (framebuffer_bpp != 32)
+
+            debug_string("FB addr: ");
+            debug_hex(
+                (uint32_t)fb->common.framebuffer_addr
+            );
+
+            debug_string("FB width: ");
+            debug_hex(framebuffer_width);
+
+            debug_string("FB height: ");
+            debug_hex(framebuffer_height);
+
+            debug_string("FB pitch: ");
+            debug_hex(framebuffer_pitch);
+
+            debug_string("FB bpp: ");
+            debug_hex(framebuffer_bpp);
+
+            debug_string("FB bytes/pixel: ");
+            debug_hex(framebuffer_bytes_per_pixel);
+
+            debug_string("FB type: ");
+            debug_hex(fb->common.framebuffer_type);
+
+            debug_string("R pos: ");
+            debug_hex(red_position);
+
+            debug_string("R mask: ");
+            debug_hex(red_mask_size);
+
+            debug_string("G pos: ");
+            debug_hex(green_position);
+
+            debug_string("G mask: ");
+            debug_hex(green_mask_size);
+
+            debug_string("B pos: ");
+            debug_hex(blue_position);
+
+            debug_string("B mask: ");
+            debug_hex(blue_mask_size);
+
+
+            /*
+             * Basic validation.
+             */
+
+            if (framebuffer == 0)
             {
-                return -2;
+                return -4;
             }
 
+            if (framebuffer_width == 0 ||
+                framebuffer_height == 0)
+            {
+                return -5;
+            }
+
+            if (framebuffer_pitch == 0)
+            {
+                return -6;
+            }
+
+            if (framebuffer_bytes_per_pixel == 0)
+            {
+                return -7;
+            }
+
+
+            /*
+             * Make sure the pitch can contain
+             * at least one complete row.
+             */
+
+            uint64_t minimum_pitch =
+                (uint64_t)framebuffer_width *
+                framebuffer_bytes_per_pixel;
+
+            if ((uint64_t)framebuffer_pitch <
+                minimum_pitch)
+            {
+                return -8;
+            }
+
+
+            /*
+             * Framebuffer successfully initialized.
+             */
 
             return 0;
         }
 
 
         /*
-         * Multiboot2 tags are 8-byte aligned.
+         * Multiboot2 tags are aligned to 8 bytes.
          */
-        size = (size + 7) & ~7;
+
+        if (size < 8)
+        {
+            return -9;
+        }
+
+        size =
+            (size + 7) & ~7u;
 
         tag_addr += size;
     }
 
+
+    /*
+     * No framebuffer tag found.
+     */
 
     return -1;
 }
@@ -218,6 +738,59 @@ uint8_t graphics_get_bpp(void)
 
 /*
  * ---------------------------------------------------------
+ * Convert Color -> framebuffer pixel
+ * ---------------------------------------------------------
+ */
+
+static uint32_t make_pixel(Color color)
+{
+    uint32_t r =
+        scale_color(
+            color.r,
+            red_mask_size
+        );
+
+    uint32_t g =
+        scale_color(
+            color.g,
+            green_mask_size
+        );
+
+    uint32_t b =
+        scale_color(
+            color.b,
+            blue_mask_size
+        );
+
+
+    uint32_t pixel = 0;
+
+
+    /*
+     * Apply channel masks before shifting.
+     */
+
+    r &= channel_mask(red_mask_size);
+    g &= channel_mask(green_mask_size);
+    b &= channel_mask(blue_mask_size);
+
+
+    pixel |=
+        r << red_position;
+
+    pixel |=
+        g << green_position;
+
+    pixel |=
+        b << blue_position;
+
+
+    return pixel;
+}
+
+
+/*
+ * ---------------------------------------------------------
  * graphics_put_pixel()
  * ---------------------------------------------------------
  */
@@ -229,8 +802,19 @@ void graphics_put_pixel(
 )
 {
     /*
-     * Bounds checking
+     * Check framebuffer.
      */
+
+    if (framebuffer == 0)
+    {
+        return;
+    }
+
+
+    /*
+     * Bounds checking.
+     */
+
     if (x >= framebuffer_width ||
         y >= framebuffer_height)
     {
@@ -239,39 +823,103 @@ void graphics_put_pixel(
 
 
     /*
-     * Construct pixel value according
-     * to framebuffer RGB layout.
+     * Construct pixel.
      */
+
     uint32_t pixel =
-        ((uint32_t)color.r << red_position) |
-        ((uint32_t)color.g << green_position) |
-        ((uint32_t)color.b << blue_position);
+        make_pixel(color);
 
 
     /*
-     * Framebuffer address:
+     * Calculate address.
      *
-     * framebuffer
-     *     +
-     *     y * pitch
-     *     +
-     *     x * bytes_per_pixel
+     * IMPORTANT:
      *
-     * 32-bit = 4 bytes/pixel
+     * Do NOT assume 4 bytes/pixel.
      */
 
-    volatile uint32_t *pixel_addr =
-        (volatile uint32_t *)
-        (
-            framebuffer +
-            y * framebuffer_pitch +
-            x * 4
-        );
+    volatile uint8_t *pixel_addr =
+        framebuffer +
+        ((uint32_t)y * framebuffer_pitch) +
+        ((uint32_t)x * framebuffer_bytes_per_pixel);
 
 
-    *pixel_addr = pixel;
+    /*
+     * Write according to pixel size.
+     */
+
+    switch (framebuffer_bytes_per_pixel)
+    {
+        case 1:
+            *(volatile uint8_t *)pixel_addr =
+                (uint8_t)pixel;
+            break;
+
+
+        case 2:
+            *(volatile uint16_t *)pixel_addr =
+                (uint16_t)pixel;
+            break;
+
+
+        case 3:
+        {
+            /*
+             * 24-bit framebuffer.
+             *
+             * Write three bytes explicitly.
+             */
+
+            pixel_addr[0] =
+                (uint8_t)(pixel & 0xFF);
+
+            pixel_addr[1] =
+                (uint8_t)((pixel >> 8) & 0xFF);
+
+            pixel_addr[2] =
+                (uint8_t)((pixel >> 16) & 0xFF);
+
+            break;
+        }
+
+
+        case 4:
+            *(volatile uint32_t *)pixel_addr =
+                pixel;
+            break;
+
+
+        default:
+            /*
+             * Unsupported framebuffer size.
+             */
+
+            break;
+    }
 }
+// void graphics_put_pixel(
+//     uint32_t x,
+//     uint32_t y,
+//     Color color
+// )
+// {
+//     if (x >= framebuffer_width ||
+//         y >= framebuffer_height)
+//     {
+//         return;
+//     }
 
+//     uint32_t offset =
+//         y * framebuffer_pitch +
+//         x * 3;
+
+//     volatile uint8_t *pixel =
+//         framebuffer + offset;
+
+//     pixel[0] = color.b;
+//     pixel[1] = color.g;
+//     pixel[2] = color.r;
+// }
 
 /*
  * ---------------------------------------------------------
@@ -286,8 +934,8 @@ void graphics_clear(Color color)
          y++)
     {
         for (uint32_t x = 0;
-             x < framebuffer_width;
-             x++)
+         x < framebuffer_width;
+         x++)
         {
             graphics_put_pixel(
                 x,
@@ -314,7 +962,18 @@ void graphics_fill_rect(
 )
 {
     /*
-     * Clip rectangle to screen.
+     * Empty rectangle.
+     */
+
+    if (width == 0 ||
+        height == 0)
+    {
+        return;
+    }
+
+
+    /*
+     * Completely outside framebuffer.
      */
 
     if (x >= framebuffer_width ||
@@ -324,31 +983,53 @@ void graphics_fill_rect(
     }
 
 
-    if (x + width > framebuffer_width)
+    /*
+     * Clip width.
+     *
+     * Avoid:
+     *
+     * x + width
+     *
+     * overflowing uint32_t.
+     */
+
+    uint32_t max_width =
+        framebuffer_width - x;
+
+    if (width > max_width)
     {
-        width =
-            framebuffer_width - x;
+        width = max_width;
     }
 
 
-    if (y + height > framebuffer_height)
+    /*
+     * Clip height.
+     */
+
+    uint32_t max_height =
+        framebuffer_height - y;
+
+    if (height > max_height)
     {
-        height =
-            framebuffer_height - y;
+        height = max_height;
     }
 
 
-    for (uint32_t yy = y;
-         yy < y + height;
+    /*
+     * Draw.
+     */
+
+    for (uint32_t yy = 0;
+         yy < height;
          yy++)
     {
-        for (uint32_t xx = x;
-             xx < x + width;
+        for (uint32_t xx = 0;
+             xx < width;
              xx++)
         {
             graphics_put_pixel(
-                xx,
-                yy,
+                x + xx,
+                y + yy,
                 color
             );
         }
@@ -370,7 +1051,8 @@ void graphics_draw_rect(
     Color color
 )
 {
-    if (width == 0 || height == 0)
+    if (width == 0 ||
+        height == 0)
     {
         return;
     }
@@ -379,6 +1061,7 @@ void graphics_draw_rect(
     /*
      * Top
      */
+
     graphics_fill_rect(
         x,
         y,
@@ -391,18 +1074,23 @@ void graphics_draw_rect(
     /*
      * Bottom
      */
-    graphics_fill_rect(
-        x,
-        y + height - 1,
-        width,
-        1,
-        color
-    );
+
+    if (height > 1)
+    {
+        graphics_fill_rect(
+            x,
+            y + height - 1,
+            width,
+            1,
+            color
+        );
+    }
 
 
     /*
      * Left
      */
+
     graphics_fill_rect(
         x,
         y,
@@ -415,13 +1103,17 @@ void graphics_draw_rect(
     /*
      * Right
      */
-    graphics_fill_rect(
-        x + width - 1,
-        y,
-        1,
-        height,
-        color
-    );
+
+    if (width > 1)
+    {
+        graphics_fill_rect(
+            x + width - 1,
+            y,
+            1,
+            height,
+            color
+        );
+    }
 }
 
 
@@ -443,16 +1135,24 @@ void graphics_draw_line(
 )
 {
     int dx =
-        x1 > x0 ? x1 - x0 : x0 - x1;
+        x1 > x0
+            ? x1 - x0
+            : x0 - x1;
 
     int sx =
-        x0 < x1 ? 1 : -1;
+        x0 < x1
+            ? 1
+            : -1;
 
     int dy =
-        y1 > y0 ? y0 - y1 : y1 - y0;
+        y1 > y0
+            ? y0 - y1
+            : y1 - y0;
 
     int sy =
-        y0 < y1 ? 1 : -1;
+        y0 < y1
+            ? 1
+            : -1;
 
     int error =
         dx + dy;
@@ -461,9 +1161,12 @@ void graphics_draw_line(
     while (1)
     {
         /*
-         * Only draw if coordinate is positive.
+         * graphics_put_pixel()
+         * already performs bounds checking.
          */
-        if (x0 >= 0 && y0 >= 0)
+
+        if (x0 >= 0 &&
+            y0 >= 0)
         {
             graphics_put_pixel(
                 (uint32_t)x0,

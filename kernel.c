@@ -1,102 +1,56 @@
 #include <stdint.h>
 #include "graphics.h"
 
+static void debug_char(char c)
+{
+    __asm__ volatile (
+        "outb %0, $0xE9"
+        :
+        : "a"(c)
+    );
+}
+
+static void debug_string(const char *s)
+{
+    while (*s)
+    {
+        debug_char(*s++);
+    }
+}
 
 void kernel_main(uint32_t mbi_addr)
 {
-    /*
-     * Initialize graphics
-     */
-    if (graphics_init(mbi_addr) != 0)
+    debug_string("A: kernel_main\n");
+
+    int result = graphics_init(mbi_addr);
+
+    debug_string("B: graphics_init returned\n");
+
+    if (result != 0)
     {
-        /*
-         * Graphics initialization failed.
-         */
+        debug_string("C: graphics_init FAILED\n");
+
         while (1)
-        {
             __asm__ volatile ("hlt");
-        }
     }
 
+    debug_string("D: graphics_init OK\n");
 
-    /*
-     * Clear screen
-     */
-    graphics_clear(
-        COLOR_BLACK
-    );
+    int y_dim = graphics_get_height();
+    int x_dim = graphics_get_width();
 
+    int b_x = x_dim/2;
+    int b_y = y_dim/2;
+    // graphics_put_pixel(100, 100, COLOR_RED);
+    // graphics_put_pixel(101, 100, COLOR_RED);
+    // graphics_put_pixel(102, 100, COLOR_RED);
+    graphics_draw_rect(x_dim/2-(b_x/2),y_dim/2-(b_y/2),b_x,b_y,COLOR_RED);
+    // graphics_fill_rect(100,100,500,500,COLOR_YELLOW);
+    
+    
 
-    /*
-     * Get screen size
-     */
-    uint32_t width =
-        graphics_get_width();
+    debug_string("F: put_pixel OK\n");
 
-    uint32_t height =
-        graphics_get_height();
-
-
-    /*
-     * Large rectangle in center
-     */
-    uint32_t rect_width = 800;
-    uint32_t rect_height = 400;
-
-    uint32_t rect_x =
-        (width - rect_width) / 2;
-
-    uint32_t rect_y =
-        (height - rect_height) / 2;
-
-
-    graphics_fill_rect(
-        rect_x,
-        rect_y,
-        rect_width,
-        rect_height,
-        COLOR_BLUE
-    );
-
-
-    /*
-     * Rectangle outline
-     */
-    graphics_draw_rect(
-        rect_x - 10,
-        rect_y - 10,
-        rect_width + 20,
-        rect_height + 20,
-        COLOR_WHITE
-    );
-
-
-    /*
-     * Diagonal lines
-     */
-    graphics_draw_line(
-        0,
-        0,
-        width - 1,
-        height - 1,
-        COLOR_RED
-    );
-
-
-    graphics_draw_line(
-        width - 1,
-        0,
-        0,
-        height - 1,
-        COLOR_GREEN
-    );
-
-
-    /*
-     * Kernel idle
-     */
     while (1)
-    {
         __asm__ volatile ("hlt");
-    }
 }
