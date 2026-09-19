@@ -36,6 +36,8 @@ void kernel_main(uint32_t mbi_addr)
 
     debug_string("D: graphics_init OK\n");
 
+    graphics_clear(COLOR_BLACK);
+
     int y_dim = graphics_get_height();
     int x_dim = graphics_get_width();
 
