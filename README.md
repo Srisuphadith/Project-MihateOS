@@ -6,8 +6,8 @@ Leaning how to develop OS, Moreover make new OS name MihateOS
 
 ---
 
-Architechture x86 cossover on Mackbook pro M1 13"
-
+- Architechture x86 cossover on Mackbook pro M1 13"
+- 32 bit OS
 ### Install dependency
 ```
 brew install \
