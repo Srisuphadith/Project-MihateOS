@@ -21,7 +21,7 @@ LDFLAGS = \
 	-o kernel
 
 
-all: myos.iso
+all: MihateOS.iso
 
 
 boot.o: boot.S
@@ -54,17 +54,17 @@ iso/boot/grub/grub.cfg: grub.cfg
 	cp grub.cfg iso/boot/grub/grub.cfg
 
 
-myos.iso: iso/boot/kernel iso/boot/grub/grub.cfg
-	$(GRUB_MKRESCUE) -o myos.iso iso
+MihateOS.iso: iso/boot/kernel iso/boot/grub/grub.cfg
+	$(GRUB_MKRESCUE) -o MihateOS.iso iso
 
 
-run: myos.iso
+run: MihateOS.iso
 	qemu-system-x86_64 \
     	-machine q35 \
     	-m 512M \
     	-drive if=pflash,format=raw,readonly=on,file=./edk2-stable202605-r1-bin/x64/code.fd \
     	-drive if=pflash,format=raw,file=./edk2-stable202605-r1-bin/x64/vars.fd \
-    	-cdrom myos.iso \
+    	-cdrom MihateOS.iso \
     	-display cocoa,zoom-to-fit=on \
 		-debugcon stdio \
     	-global isa-debugcon.iobase=0xe9 \
@@ -72,4 +72,4 @@ run: myos.iso
 
 
 clean:
-	rm -rf *.o kernel myos.iso iso
+	rm -rf *.o kernel MihateOS.iso iso
