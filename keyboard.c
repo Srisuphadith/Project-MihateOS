@@ -36,6 +36,8 @@ static const char scancode_table[128] =
     ' '
 };
 int baseX = 10;
+int baseY = 50;
+
 void keyboard_handler(void)
 {
     uint8_t scancode =
@@ -58,7 +60,11 @@ void keyboard_handler(void)
                  * ตอนแรกยังไม่ต้อง console
                  * เอาไว้ debug ก่อน
                  */
-                graphics_draw_char(baseX,50,c,COLOR_WHITE);
+                if(baseX > graphics_get_width() - 10){
+                    baseX = 10;
+                    baseY += 10;
+                }
+                graphics_draw_char(baseX,baseY,c,COLOR_WHITE);
                 baseX += 8;
             }
         }
